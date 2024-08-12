@@ -31,7 +31,8 @@ import Language.PureScript.Names
 import Language.PureScript.Options
 import Language.PureScript.PSString (PSString, mkString)
 import Language.PureScript.Traversals (sndM)
-import qualified Language.PureScript.Constants as C
+import Language.PureScript.Constants.Libs qualified as C
+import Language.PureScript.Constants.Prim qualified as C
 
 import System.FilePath.Posix ((</>))
 
@@ -50,7 +51,7 @@ moduleToIL
   => Module Ann
   -> Maybe AST
   -> m (Text, [Text], [AST], Text, Text)
-moduleToIL (Module _ coms mn _ imps _ foreigns decls) _ =
+moduleToIL (Module _ coms mn _ imps _ foreigns _ decls) _ =
   do
     let usedNames = concatMap getNames decls
     let mnLookup = renameImports usedNames imps
@@ -206,8 +207,6 @@ moduleToIL (Module _ coms mn _ imps _ foreigns decls) _ =
   var :: Ident -> AST
   var = AST.Var Nothing . identToIL
 
-  accessorString :: PSString -> AST -> AST
-  accessorString prop = AST.Indexer Nothing (AST.StringLiteral Nothing prop)
 
   -- | Generate code in the simplified intermediate representation for a value or expression.
 
@@ -299,7 +298,7 @@ moduleToIL (Module _ coms mn _ imps _ foreigns decls) _ =
   -- | Generate code in the simplified intermediate representation for a reference to a
   -- variable that may have a qualified name.
   qualifiedToIL :: (a -> Ident) -> Qualified a -> AST
-  qualifiedToIL f (Qualified (Just (ModuleName mn')) a) | mn' == C.prim = AST.Var Nothing . identToIL $ f a
+  qualifiedToIL f (Qualified (Just (ModuleName mn')) a) | mn' == C.M_Prim = AST.Var Nothing . identToIL $ f a
   qualifiedToIL f (Qualified (Just mn') a) | mn /= mn' = AST.Indexer Nothing (AST.Var Nothing . identToIL $ f a) (AST.Var Nothing (moduleNameToIL mn'))
   qualifiedToIL f (Qualified _ a) = AST.Indexer Nothing (AST.Var Nothing . identToIL $ f a) (AST.Var Nothing "")
 
@@ -376,8 +375,8 @@ moduleToIL (Module _ coms mn _ imps _ foreigns decls) _ =
   literalToBinderIL varName done (NumericLiteral num@Right{}) =
     return [AST.IfElse Nothing (unbox' bool
                                   (foldl (\fn a -> AST.App Nothing fn [a])
-                                    (AST.Indexer Nothing (AST.Var Nothing C.eq) (AST.Var Nothing C.dataEq))
-                                    [ AST.Indexer Nothing (AST.Var Nothing C.eqNumber) (AST.Var Nothing C.dataEq)
+                                    (AST.Indexer Nothing (AST.Var Nothing C.Eq) (AST.Var Nothing C.M_Data_Eq))
+                                    [ AST.Indexer Nothing (AST.Var Nothing C.P_eqNumber) (AST.Var Nothing C.M_Data_Eq)
                                     , AST.Var Nothing varName
                                     , AST.NumericLiteral Nothing num
                                     ]))
@@ -398,13 +397,14 @@ moduleToIL (Module _ coms mn _ imps _ foreigns decls) _ =
       propVar <- freshName'
       done'' <- go done' bs'
       il <- binderToIL propVar done'' binder
-      return (AST.VariableIntroduction Nothing propVar (Just (accessorString prop (AST.Var Nothing varName))) : il)
+      return (AST.VariableIntroduction Nothing propVar (Just (UnknownEffects, accessorString prop (AST.Var Nothing varName))) : il)
   literalToBinderIL varName done (ArrayLiteral bs) = do
     il <- go done 0 bs
     return [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo
                                    (arrayLength $ AST.Var Nothing varName)
                                    (AST.NumericLiteral Nothing (Left (fromIntegral $ length bs))))
                (AST.Block Nothing il) Nothing]
+
     where
     go :: [AST] -> Integer -> [Binder Ann] -> m [AST]
     go done' _ [] = return done'
@@ -412,7 +412,21 @@ moduleToIL (Module _ coms mn _ imps _ foreigns decls) _ =
       elVar <- freshName'
       done'' <- go done' (index + 1) bs'
       il <- binderToIL elVar done'' binder
-      return (AST.VariableIntroduction Nothing elVar (Just (AST.Indexer Nothing (AST.NumericLiteral Nothing (Left index)) (AST.Var Nothing varName))) : il)
+      return (AST.VariableIntroduction Nothing elVar (Just (UnknownEffects, AST.Indexer Nothing (AST.NumericLiteral Nothing (Left index)) (AST.Var Nothing varName))) : il)
+
+  literalToBinderJS :: Text -> [AST] -> Literal (Binder Ann) -> m [AST]
+  literalToBinderJS varName done (NumericLiteral num) =
+    return [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo (AST.Var Nothing varName) (AST.NumericLiteral Nothing num)) (AST.Block Nothing done) Nothing]
+  literalToBinderJS varName done (CharLiteral c) =
+    return [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo (AST.Var Nothing varName) (AST.StringLiteral Nothing (fromString [c]))) (AST.Block Nothing done) Nothing]
+  literalToBinderJS varName done (StringLiteral str) =
+    return [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo (AST.Var Nothing varName) (AST.StringLiteral Nothing str)) (AST.Block Nothing done) Nothing]
+  literalToBinderJS varName done (BooleanLiteral True) =
+    return [AST.IfElse Nothing (AST.Var Nothing varName) (AST.Block Nothing done) Nothing]
+  literalToBinderJS varName done (BooleanLiteral False) =
+    return [AST.IfElse Nothing (AST.Unary Nothing AST.Not (AST.Var Nothing varName)) (AST.Block Nothing done) Nothing]
+  literalToBinderJS varName done (ObjectLiteral bs) = go done bs
+
 
 emptyAnn :: Ann
 emptyAnn = (SourceSpan "" (SourcePos 0 0) (SourcePos 0 0), [], Nothing, Nothing)
@@ -426,3 +440,7 @@ unbox' _ v@AST.BooleanLiteral{} = v
 unbox' _ v@AST.StringLiteral{}  = v
 unbox' _ v@AST.Binary{}         = v
 unbox' t v = AST.App Nothing (AST.StringLiteral Nothing $ mkString t) [v]
+
+accessorString :: PSString -> AST -> AST
+accessorString prop = AST.Indexer Nothing (AST.StringLiteral Nothing prop)
+

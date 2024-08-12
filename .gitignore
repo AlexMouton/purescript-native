@@ -21,3 +21,12 @@ examples/docs/docs/
 core-tests/full-core-docs.md
 .psc-ide-port
 .vscode/
+# Devenv
+.devenv*
+devenv.local.nix
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml

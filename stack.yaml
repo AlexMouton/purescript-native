@@ -1,24 +1,23 @@
-resolver: lts-13.26
+resolver: lts-20.9
 
 packages:
 - .
 
-extra-deps:
-- git: https://github.com/purescript/purescript
-  commit: 9cad73ed8ea7df3011032ddbd2f3de5a0c08629c
-- happy-1.19.9
-- language-javascript-0.7.0.0
-- network-3.0.1.1
-- these-1.0.1
-- semialign-1
-
 nix:
   enable: false
   shell-file: stack.nix
+
+system-ghc: true
+
+extra-deps:
+  - purescript-0.15.15@sha256:8e2a2452b66e29dbfa8269c523487f882c7b94aa71766b06be7e51da4dc85035,21429
+  - monoidal-containers-0.6.5.0@sha256:ff06e22c520b540dbf3bede0df723810a9d144ecb92e8d97845465fac86b0fc1,2247
+  - language-javascript-0.7.0.0@sha256:3eab0262b8ac5621936a4beab6a0f97d0e00a63455a8b0e3ac1547b4088dae7d,3898
+  - process-1.6.13.1@sha256:c8bb8b7c993ff72d771381b3b56852dd154bce51880a24789c11f57b0688d353,2963
+  - Cabal-3.6.3.0
 
 flags:
   aeson-pretty:
     lib-only: true
   these:
     assoc: false
-    quickcheck: false

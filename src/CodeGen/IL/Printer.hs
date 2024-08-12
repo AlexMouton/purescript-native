@@ -34,7 +34,7 @@ import Language.PureScript.PSString (PSString, decodeString, mkString)
 import CodeGen.IL.Common
 import CodeGen.IL.Optimizer.TCO (tcoLoop)
 
-import qualified Language.PureScript.Constants as C
+-- import Language.PureScript.Constants qualified as C
 
 -- TODO (Christoph): Get rid of T.unpack / pack
 
@@ -77,11 +77,11 @@ literals = mkPattern' match'
     , currentIndent
     , return $ emit "}"
     ]
-  match (Var _ ident) | ident == C.undefined = return $ emit C.undefined
+  -- match (Var _ ident) | ident == C.undefined = return $ emit C.undefined
   match (Var _ ident) = return $ emit ident
   match (VariableIntroduction _ ident value) = mconcat <$> sequence
     [ return $ emit $ "boxed " <> ident
-    , maybe (return mempty) (fmap (emit " = " <>) . prettyPrintIL') value
+    , maybe (return mempty) (fmap (emit " = " <>) . prettyPrintIL' . snd) value
     ]
   match (Assignment _ target value) = mconcat <$> sequence
     [ prettyPrintIL' target
@@ -253,17 +253,17 @@ literals = mkPattern' match'
     [ return $ emit "return "
     , prettyPrintIL' value
     ]
-  match (ReturnNoResult _) = return . emit $ "return " <> C.undefined
+  match (ReturnNoResult _) = return . emit $ "return " -- <> C.undefined
   -- match (Throw _ _) = return mempty
   match (Throw _ value) = mconcat <$> sequence
     [ return $ emit "THROW_("
     , prettyPrintIL' value
     , return $ emit ")"
     ]
-  match (Comment _ com il) = mconcat <$> sequence
+  match (Comment (SourceComments com) il) = mconcat <$> sequence
     [ return $ emit "\n"
     , mconcat <$> forM com comment
-    , prettyPrintIL' il
+    , prettyPrintIL' il 
     ]
   match _ = mzero
 
